@@ -1,168 +1,63 @@
 package main
 
 import (
-	"log"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/gin"
+	"github.com/rs/cors" // Tambahkan package ini
 )
 
-type Data struct {
-	Date   string `json:"date"`
-	Growth int    `json:"growth"`
+type FileData struct {
+	Date     string `json:"date"`
+	SizeKB   int64  `json:"sizeKB"`
+	Filename string `json:"filename"`
 }
 
-func getDatabaseGrowth(c *gin.Context) {
-	startDate := c.DefaultQuery("start", "2025-01-01") // Default start date
-	endDate := c.DefaultQuery("end", "2025-02-28")     // Default end date
+func getFileSizes(w http.ResponseWriter, r *http.Request) {
+	directory := "./sql_files" // Ganti path ke folder yang benar
+	var filesData []FileData
 
-	// Dummy data for illustration
-	data := []Data{
-		{"2025-01-01", 120},
-		{"2025-01-02", 130},
-		{"2025-01-03", 160},
-		{"2025-01-04", 170},
-		{"2025-01-05", 180},
-		{"2025-01-06", 150},
-		{"2025-01-07", 160},
-		{"2025-01-08", 170},
-		{"2025-01-09", 150},
-		{"2025-01-10", 160},
-		{"2025-01-11", 155},
-		{"2025-01-12", 170},
-		{"2025-01-13", 160},
-		{"2025-01-14", 170},
-		{"2025-01-15", 180},
-		{"2025-01-16", 150},
-		{"2025-01-17", 160},
-		{"2025-01-18", 170},
-		{"2025-01-19", 150},
-		{"2025-01-20", 160},
-		{"2025-01-21", 135},
-		{"2025-01-22", 130},
-		{"2025-01-23", 160},
-		{"2025-01-24", 170},
-		{"2025-01-25", 200},
-		{"2025-01-26", 190},
-		{"2025-01-27", 160},
-		{"2025-01-28", 170},
-		{"2025-01-29", 180},
-		{"2025-01-30", 190},
-		{"2025-01-31", 160},
-		{"2025-02-01", 120},
-		{"2025-02-02", 130},
-		{"2025-02-03", 160},
-		{"2025-02-04", 170},
-		{"2025-02-05", 180},
-		{"2025-02-06", 150},
-		{"2025-02-07", 160},
-		{"2025-02-08", 170},
-		{"2025-02-09", 150},
-		{"2025-02-10", 160},
-		{"2025-02-11", 155},
-		{"2025-02-12", 170},
-		{"2025-02-13", 160},
-		{"2025-02-14", 170},
-		{"2025-02-15", 180},
-		{"2025-02-16", 150},
-		{"2025-02-17", 160},
-		{"2025-02-18", 170},
-		{"2025-02-19", 150},
-		{"2025-02-20", 160},
-		{"2025-02-21", 135},
-		{"2025-02-22", 130},
-		{"2025-02-23", 160},
-		{"2025-02-24", 170},
-		{"2025-02-25", 200},
-		{"2025-02-26", 200},
-		{"2025-02-27", 160},
-		{"2025-02-28", 170},
-		{"2025-03-01", 120},
-		{"2025-03-02", 130},
-		{"2025-03-03", 160},
-		{"2025-03-04", 170},
-		{"2025-03-05", 180},
-		{"2025-03-06", 150},
-		{"2025-03-07", 160},
-		{"2025-03-08", 170},
-		{"2025-03-09", 150},
-		{"2025-03-10", 160},
-		{"2025-03-11", 155},
-		{"2025-03-12", 170},
-		{"2025-03-13", 160},
-		{"2025-03-14", 170},
-		{"2025-03-15", 180},
-		{"2025-03-16", 150},
-		{"2025-03-17", 160},
-		{"2025-03-18", 170},
-		{"2025-03-19", 150},
-		{"2025-03-20", 160},
-		{"2025-03-21", 135},
-		{"2025-03-22", 130},
-		{"2025-03-23", 160},
-		{"2025-03-24", 170},
-		{"2025-03-25", 200},
-		{"2025-03-26", 190},
-		{"2025-03-27", 160},
-		{"2025-03-28", 170},
-		{"2025-03-29", 180},
-		{"2025-03-30", 190},
-		{"2025-03-31", 160},
-		{"2025-04-01", 120},
-		{"2025-04-02", 130},
-		{"2025-04-03", 160},
-		{"2025-04-04", 170},
-		{"2025-04-05", 180},
-		{"2025-04-06", 150},
-		{"2025-04-07", 160},
-		{"2025-04-08", 170},
-		{"2025-04-09", 150},
-		{"2025-04-10", 160},
-		{"2025-04-11", 155},
-		{"2025-04-12", 170},
-		{"2025-04-13", 160},
-		{"2025-04-14", 170},
-		{"2025-04-15", 180},
-		{"2025-04-16", 150},
-		{"2025-04-17", 160},
-		{"2025-04-18", 170},
-		{"2025-04-19", 150},
-		{"2025-04-20", 160},
-		{"2025-04-21", 135},
-		{"2025-04-22", 130},
-		{"2025-04-23", 160},
-		{"2025-04-24", 170},
-		{"2025-04-25", 200},
-		{"2025-04-26", 190},
-		{"2025-04-27", 160},
-		{"2025-04-28", 170},
-		{"2025-04-29", 180},
-		{"2025-04-30", 190},
-	}
-
-	// Filter data based on the requested date range (this is just for illustration)
-	filteredData := []Data{}
-	for _, entry := range data {
-		if entry.Date >= startDate && entry.Date <= endDate {
-			filteredData = append(filteredData, entry)
+	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
 		}
+		if !info.IsDir() {
+			// Simulasikan tanggal file dengan tanggal modifikasi file
+			modTime := info.ModTime().Format("2006-01-02")
+
+			filesData = append(filesData, FileData{
+				Date:     modTime,
+				SizeKB:   info.Size() / 1024, // Konversi ke KB
+				Filename: info.Name(),
+			})
+		}
+		return nil
+	})
+
+	if err != nil {
+		http.Error(w, "Error reading files", http.StatusInternalServerError)
+		return
 	}
 
-	c.JSON(http.StatusOK, filteredData)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(filesData)
 }
 
 func main() {
-	r := gin.Default()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/file-size", getFileSizes)
 
-	// Enable CORS
-	r.Use(cors.Default()) // This will allow all origins by default
+	// Tambahkan middleware CORS
+	handler := cors.New(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:3002"}, // Izinkan frontend
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Content-Type"},
+		AllowCredentials: true,
+	}).Handler(mux)
 
-	// Route to fetch database growth data
-	r.GET("/api/database-growth", getDatabaseGrowth)
-
-	// Start server
-	if err := r.Run(":8080"); err != nil {
-		log.Fatal("Server failed to start: ", err)
-	}
+	fmt.Println("Server running on port 8080...")
+	http.ListenAndServe(":8080", handler)
 }
