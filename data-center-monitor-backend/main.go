@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rs/cors" // Tambahkan package ini
+	"github.com/rs/cors"
 )
 
 type FileData struct {
@@ -17,7 +17,7 @@ type FileData struct {
 }
 
 func getFileSizes(w http.ResponseWriter, r *http.Request) {
-	directory := "./sql_files" // Ganti path ke folder yang benar
+	directory := "./sql_files" // Direktori file-file SQL
 	var filesData []FileData
 
 	err := filepath.Walk(directory, func(path string, info os.FileInfo, err error) error {
@@ -52,7 +52,7 @@ func main() {
 
 	// Tambahkan middleware CORS
 	handler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3002"}, // Izinkan frontend
+		AllowedOrigins:   []string{"http://localhost:3000"}, // Izinkan frontend
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: true,
