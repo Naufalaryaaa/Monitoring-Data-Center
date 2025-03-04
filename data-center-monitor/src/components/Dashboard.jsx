@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { FaSearch, FaBell } from "react-icons/fa";
+import { BsCalendar } from "react-icons/bs";
+import pindadLogo from "../assets/pindad.png";
 
-// Komponen Chart untuk memisahkan logika tiap grafik
 const ChartComponent = ({ data }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [filteredData, setFilteredData] = useState(data);
@@ -16,7 +18,6 @@ const ChartComponent = ({ data }) => {
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
-
       results = results.filter((item) => {
         const itemDate = new Date(item.name);
         return itemDate >= start && itemDate <= end;
@@ -27,27 +28,36 @@ const ChartComponent = ({ data }) => {
   }, [searchTerm, startDate, endDate, data]);
 
   return (
-    <div className="bg-white shadow-lg rounded-lg p-6">
-      {/* Search & Date Filter */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-4 space-y-2 md:space-y-0">
+    <div className="bg-white shadow-lg rounded-xl p-6">
+      {/* Search Input */}
+      <div className="relative mb-3">
         <input
           type="text"
           placeholder="Search Database"
-          className="w-full md:w-1/2 p-2 border border-gray-300 rounded-lg shadow-sm focus:ring focus:ring-blue-300"
+          className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring focus:ring-blue-300"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
-        <div className="flex space-x-2">
+        <FaSearch className="absolute top-4 right-4 text-gray-500" />
+      </div>
+
+      {/* Date Filters */}
+      <div className="flex items-center justify-between mb-4 space-x-2">
+        <div className="flex items-center space-x-2 bg-gray-100 p-2 rounded-lg border border-gray-300">
+          <BsCalendar className="text-gray-500" />
           <input
             type="date"
-            className="p-2 border border-gray-300 rounded-lg shadow-sm focus:ring focus:ring-blue-300"
+            className="bg-transparent outline-none text-gray-700"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
           />
-          <span className="text-xl">→</span>
+        </div>
+        <span className="text-xl">→</span>
+        <div className="flex items-center space-x-2 bg-gray-100 p-2 rounded-lg border border-gray-300">
+          <BsCalendar className="text-gray-500" />
           <input
             type="date"
-            className="p-2 border border-gray-300 rounded-lg shadow-sm focus:ring focus:ring-blue-300"
+            className="bg-transparent outline-none text-gray-700"
             value={endDate}
             onChange={(e) => setEndDate(e.target.value)}
           />
@@ -89,13 +99,15 @@ const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       {/* Header */}
-      <div className="text-center mb-6">
-        <h1 className="text-4xl font-bold text-white bg-blue-800 p-4 rounded-lg">
-          Monitoring Data Center
-        </h1>
+      <div className="flex justify-between items-center bg-blue-800 text-white p-4 rounded-lg shadow-lg mb-6">
+        <div className="flex items-center space-x-3">
+          <img src={pindadLogo} alt="pindadLogo" className="h-10" />
+          <h1 className="text-3xl font-bold">Monitoring Data Center</h1>
+        </div>
+        <FaBell className="text-2xl cursor-pointer" />
       </div>
 
-      {/* Grid Layout untuk 4 Graph */}
+      {/* Grid Layout */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {[...Array(4)].map((_, index) => (
           <ChartComponent key={index} data={data} />
