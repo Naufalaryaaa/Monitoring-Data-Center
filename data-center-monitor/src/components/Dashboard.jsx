@@ -1,36 +1,59 @@
 import { useState, useEffect } from "react";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer
+} from "recharts";
 import { FaSearch, FaBell } from "react-icons/fa";
 import { BsCalendar } from "react-icons/bs";
-import pindadLogo from "../assets/pindad.png";
+import pindadLogo from "../assets/pindad.png"; // Pastikan lokasi file sesuai
 
+// Komponen Chart + Filter
 const ChartComponent = ({ data }) => {
   const [searchTerm, setSearchTerm] = useState("");
-  const [filteredData, setFilteredData] = useState(data);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [filteredData, setFilteredData] = useState(data);
 
   useEffect(() => {
-    let results = data.filter((item) =>
-      item.filename.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Copy array data
+    let results = [...data];
 
+    // Filter pencarian filename
+    if (searchTerm.trim() !== "") {
+      results = results.filter((item) =>
+        item.filename.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    // Filter rentang tanggal
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
       results = results.filter((item) => {
-        const itemDate = new Date(item.name);
+        const itemDate = new Date(item.date); // data item.date format "YYYY-MM-DD"
         return itemDate >= start && itemDate <= end;
       });
     }
 
+    // Sort data bedasarkan date (ascending)
+    results.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Jika hanya 1 data point, gandakan supaya area chart menampilkan garis
+    if (results.length === 1) {
+      results.push({ ...results[0] });
+    }
+
     setFilteredData(results);
-  }, [searchTerm, startDate, endDate, data]);
+  }, [data, searchTerm, startDate, endDate]);
 
   return (
     <div className="bg-white shadow-lg rounded-xl p-6">
-      {/* Search Input */}
-      <div className="relative mb-3">
+      {/* Input Pencarian */}
+      <div className="relative mb-4">
         <input
           type="text"
           placeholder="Search Database"
@@ -41,7 +64,7 @@ const ChartComponent = ({ data }) => {
         <FaSearch className="absolute top-4 right-4 text-gray-500" />
       </div>
 
-      {/* Date Filters */}
+      {/* Filter Tanggal */}
       <div className="flex items-center justify-between mb-4 space-x-2">
         <div className="flex items-center space-x-2 bg-gray-100 p-2 rounded-lg border border-gray-300">
           <BsCalendar className="text-gray-500" />
@@ -64,14 +87,19 @@ const ChartComponent = ({ data }) => {
         </div>
       </div>
 
-      {/* Chart */}
+      {/* Grafik Area */}
       <div className="w-full bg-gray-50 p-4 rounded-lg shadow-lg">
         <ResponsiveContainer width="100%" height={250}>
           <AreaChart data={filteredData}>
-            <XAxis dataKey="name" tick={{ fontSize: 12, fill: "#6B7280" }} />
+            <XAxis dataKey="date" tick={{ fontSize: 12, fill: "#6B7280" }} />
             <YAxis tick={{ fontSize: 12, fill: "#6B7280" }} />
             <Tooltip />
-            <Area type="monotone" dataKey="sizeKB" stroke="#2563eb" fill="#93c5fd" />
+            <Area
+              type="monotone"
+              dataKey="sizeKB"
+              stroke="#2563eb"
+              fill="#93c5fd"
+            />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -79,18 +107,29 @@ const ChartComponent = ({ data }) => {
   );
 };
 
+// Komponen utama Dashboard
 const Dashboard = () => {
   const [data, setData] = useState([]);
 
   useEffect(() => {
-    fetch("http://localhost:8080/file-size")
-      .then((res) => res.json())
-      .then((data) => {
-        const formattedData = data.map((item) => ({
-          name: item.date,
-          sizeKB: item.sizeKB,
-          filename: item.filename,
-        }));
+    fetch("http://localhost:8080/db-sizes")
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Server error: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then((jsonData) => {
+        console.log("Data fetched:", jsonData);
+        // Pastikan nama field di JSON adalah "sizeKB" (bukan "size_kb" kalau ternyata backend mengirim "sizeKB")
+        // Lakukan parse agar benar-benar number
+        const formattedData = jsonData.map((item) => {
+          return {
+            date: item.date, // "YYYY-MM-DD"
+            sizeKB: Number(item.sizeKB), // Perhatikan case field di backend
+            filename: item.filename
+          };
+        });
         setData(formattedData);
       })
       .catch((err) => console.error("Error fetching data:", err));
@@ -107,10 +146,10 @@ const Dashboard = () => {
         <FaBell className="text-2xl cursor-pointer" />
       </div>
 
-      {/* Grid Layout */}
+      {/* Grid empat ChartComponent */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {[...Array(4)].map((_, index) => (
-          <ChartComponent key={index} data={data} />
+        {[...Array(4)].map((_, i) => (
+          <ChartComponent key={i} data={data} />
         ))}
       </div>
     </div>
