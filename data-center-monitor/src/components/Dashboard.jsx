@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import Notifications from "./Notifications"; // Import Notifications Component
+import Notifications from "./Notifications"; 
 import {
   AreaChart,
   Area,
@@ -10,31 +10,25 @@ import {
 } from "recharts";
 import { FaSearch } from "react-icons/fa";
 import { BsCalendar } from "react-icons/bs";
-import pindadLogo from "../assets/pindad.png"; // Pastikan file pindad.png ada dan path benar
+import pindadLogo from "../assets/pindad.png";
 
 const ChartComponent = ({ data }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [filteredData, setFilteredData] = useState(data);
+  const [suggestions, setSuggestions] = useState([]); // To hold search suggestions
 
   useEffect(() => {
     // Mulai dengan data original
     let results = [...data];
-
-    // Filter berdasarkan pencarian (filename)
-    if (searchTerm.trim() !== "") {
-      results = results.filter((item) =>
-        item.filename.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-    }
 
     // Filter berdasarkan rentang tanggal
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
       results = results.filter((item) => {
-        const itemDate = new Date(item.date); // data item.date format "YYYY-MM-DD"
+        const itemDate = new Date(item.date); 
         return itemDate >= start && itemDate <= end;
       });
     }
@@ -48,23 +42,65 @@ const ChartComponent = ({ data }) => {
     }
 
     setFilteredData(results);
-  }, [data, searchTerm, startDate, endDate]);
+  }, [data, startDate, endDate]);
+
+  const handleSearch = () => {
+    let results = [...data];
+
+    if (searchTerm.trim() !== "") {
+      results = results.filter((item) =>
+        item.filename.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    setFilteredData(results);
+  };
+
+  const handleChangeSearchTerm = (e) => {
+    const term = e.target.value;
+    setSearchTerm(term);
+
+    // Generate search suggestions based on current input
+    const filteredSuggestions = data.filter((item) =>
+      item.filename.toLowerCase().includes(term.toLowerCase())
+    );
+    setSuggestions(filteredSuggestions);
+  };
 
   return (
     <div className="bg-white shadow-lg rounded-xl p-6">
-      {/* Input Pencarian */}
       <div className="relative mb-4">
         <input
           type="text"
           placeholder="Search Database"
           className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring focus:ring-blue-300"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={handleChangeSearchTerm}
         />
-        <FaSearch className="absolute top-4 right-4 text-gray-500" />
+        <FaSearch
+          className="absolute top-4 right-4 text-gray-500 cursor-pointer"
+          onClick={handleSearch} // Trigger search when clicked
+        />
+        {/* Displaying suggestions */}
+        {suggestions.length > 0 && (
+          <ul className="absolute bg-white w-full border border-gray-300 max-h-60 overflow-y-auto z-10">
+            {suggestions.map((item, index) => (
+              <li
+                key={index}
+                className="p-2 hover:bg-gray-200 cursor-pointer"
+                onClick={() => {
+                  setSearchTerm(item.filename);
+                  setSuggestions([]); // Clear suggestions
+                  handleSearch(); // Perform the search
+                }}
+              >
+                {item.filename}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
-      {/* Filter Tanggal */}
       <div className="flex items-center justify-between mb-4 space-x-2">
         <div className="flex items-center space-x-2 bg-gray-100 p-2 rounded-lg border border-gray-300">
           <BsCalendar className="text-gray-500" />
@@ -87,7 +123,6 @@ const ChartComponent = ({ data }) => {
         </div>
       </div>
 
-      {/* Grafik Area */}
       <div className="w-full bg-gray-50 p-4 rounded-lg shadow-lg">
         <ResponsiveContainer width="100%" height={250}>
           <AreaChart data={filteredData}>
@@ -107,7 +142,6 @@ const ChartComponent = ({ data }) => {
   );
 };
 
-// Komponen utama Dashboard
 const Dashboard = () => {
   const [data, setData] = useState([]);
 
@@ -117,7 +151,7 @@ const Dashboard = () => {
       .then((jsonData) => {
         const formattedData = jsonData.map((item) => ({
           date: item.date,
-          sizeKB: Number(item.size_kb), // sesuaikan nama field
+          sizeKB: Number(item.size_kb),
           filename: item.filename,
         }));
         setData(formattedData);
@@ -127,16 +161,14 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      {/* Header */}
       <div className="flex justify-between items-center bg-blue-800 text-white p-4 rounded-lg shadow-lg mb-6">
         <div className="flex items-center space-x-3">
           <img src={pindadLogo} alt="Pindad Logo" className="h-10" />
           <h1 className="text-3xl font-bold">Monitoring Data Center</h1>
         </div>
-        <Notifications /> {/* Add Notifications here */}
+        <Notifications />
       </div>
 
-      {/* Grid empat chart */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {[...Array(4)].map((_, i) => (
           <ChartComponent key={i} data={data} />
