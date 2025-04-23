@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import Notifications from "./Notifications"; // Import Notifications Component
 import {
   AreaChart,
   Area,
@@ -7,11 +8,10 @@ import {
   Tooltip,
   ResponsiveContainer
 } from "recharts";
-import { FaSearch, FaBell } from "react-icons/fa";
+import { FaSearch } from "react-icons/fa";
 import { BsCalendar } from "react-icons/bs";
-import pindadLogo from "../assets/pindad.png"; // Pastikan lokasi file sesuai
+import pindadLogo from "../assets/pindad.png"; // Pastikan file pindad.png ada dan path benar
 
-// Komponen Chart + Filter
 const ChartComponent = ({ data }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -19,17 +19,17 @@ const ChartComponent = ({ data }) => {
   const [filteredData, setFilteredData] = useState(data);
 
   useEffect(() => {
-    // Copy array data
+    // Mulai dengan data original
     let results = [...data];
 
-    // Filter pencarian filename
+    // Filter berdasarkan pencarian (filename)
     if (searchTerm.trim() !== "") {
       results = results.filter((item) =>
         item.filename.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
-    // Filter rentang tanggal
+    // Filter berdasarkan rentang tanggal
     if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
@@ -39,7 +39,7 @@ const ChartComponent = ({ data }) => {
       });
     }
 
-    // Sort data bedasarkan date (ascending)
+    // Sort data berdasarkan date (ascending)
     results.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     // Jika hanya 1 data point, gandakan supaya area chart menampilkan garis
@@ -113,26 +113,16 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetch("http://localhost:8080/db-sizes")
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error(`Server error: ${res.status}`);
-        }
-        return res.json();
-      })
+      .then((res) => res.json())
       .then((jsonData) => {
-        console.log("Data fetched:", jsonData);
-        // Pastikan nama field di JSON adalah "sizeKB" (bukan "size_kb" kalau ternyata backend mengirim "sizeKB")
-        // Lakukan parse agar benar-benar number
-        const formattedData = jsonData.map((item) => {
-          return {
-            date: item.date, // "YYYY-MM-DD"
-            sizeKB: Number(item.sizeKB), // Perhatikan case field di backend
-            filename: item.filename
-          };
-        });
+        const formattedData = jsonData.map((item) => ({
+          date: item.date,
+          sizeKB: Number(item.size_kb), // sesuaikan nama field
+          filename: item.filename,
+        }));
         setData(formattedData);
       })
-      .catch((err) => console.error("Error fetching data:", err));
+      .catch(console.error);
   }, []);
 
   return (
@@ -140,13 +130,13 @@ const Dashboard = () => {
       {/* Header */}
       <div className="flex justify-between items-center bg-blue-800 text-white p-4 rounded-lg shadow-lg mb-6">
         <div className="flex items-center space-x-3">
-          <img src={pindadLogo} alt="pindadLogo" className="h-10" />
+          <img src={pindadLogo} alt="Pindad Logo" className="h-10" />
           <h1 className="text-3xl font-bold">Monitoring Data Center</h1>
         </div>
-        <FaBell className="text-2xl cursor-pointer" />
+        <Notifications /> {/* Add Notifications here */}
       </div>
 
-      {/* Grid empat ChartComponent */}
+      {/* Grid empat chart */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {[...Array(4)].map((_, i) => (
           <ChartComponent key={i} data={data} />

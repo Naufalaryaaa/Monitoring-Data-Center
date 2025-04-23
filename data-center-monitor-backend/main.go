@@ -6,145 +6,233 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/smtp"
 	"os"
 	"path/filepath"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql" // MySQL driver
-	"github.com/rs/cors"               // Untuk menangani CORS
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/robfig/cron/v3" // Package cron untuk penjadwalan
+	"github.com/rs/cors"        // Untuk CORS (Cross-Origin Resource Sharing)
 )
-
-// FileData merepresentasikan struktur data untuk masing-masing file dummy (database)
-type FileData struct {
-	ID       int    `json:"id"`       // ID auto-increment
-	Date     string `json:"date"`     // Tanggal modifikasi file (YYYY-MM-DD)
-	Filename string `json:"filename"` // Nama file (misal: database1.sql)
-	SizeKB   int64  `json:"sizeKB"`   // Ukuran file dalam kilobyte
-}
 
 var db *sql.DB
 
-// createTable membuat tabel db_sizes jika belum ada
-func createTable() error {
-	query := `
-        CREATE TABLE IF NOT EXISTS db_sizes (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            date DATE NOT NULL,
-            filename VARCHAR(255) NOT NULL,
-            size_kb BIGINT NOT NULL
-        );
-    `
-	_, err := db.Exec(query)
-	return err
+// FileData represents the structure of the data to be stored in db_sizes
+type FileData struct {
+	ID       int    `json:"id"`
+	Date     string `json:"date"`
+	Filename string `json:"filename"`
+	SizeKB   int64  `json:"size_kb"`
 }
 
-// syncFileDataToDB membaca semua file .sql dalam folder sql_files dan menyimpannya ke tabel db_sizes
-func syncFileDataToDB(folder string) error {
-	// Hapus dulu data lama (optional, tergantung kebutuhan)
-	_, err := db.Exec("TRUNCATE TABLE db_sizes;")
+func main() {
+	// Gunakan DSN untuk koneksi ke MySQL
+	dsn := "root:@tcp(localhost:3306)/monitoring_db" // Ganti dengan kredensial yang sesuai
+
+	var err error
+	db, err = sql.Open("mysql", dsn)
 	if err != nil {
+		log.Fatalf("DB open error: %v", err)
+	}
+	defer db.Close()
+
+	// Verifikasi koneksi
+	if err = db.Ping(); err != nil {
+		log.Fatalf("DB ping error: %v", err)
+	}
+
+	// Membuat tabel db_sizes jika belum ada
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS db_sizes (
+			id INT AUTO_INCREMENT PRIMARY KEY,
+			date DATE NOT NULL,
+			filename VARCHAR(255) NOT NULL,
+			size_kb BIGINT NOT NULL
+		);
+	`); err != nil {
+		log.Fatalf("Create table error: %v", err)
+	}
+
+	// Menjalankan cron job untuk sinkronisasi dan pemberitahuan setiap hari jam 08:00
+	c := cron.New()
+	c.AddFunc("0 8 * * *", func() {
+		log.Println("⏰ Running daily sync + notify")
+		if err := syncFileDataToDB("./sql_files"); err != nil {
+			log.Println("Sync error:", err)
+			return
+		}
+		if err := checkAndNotify(); err != nil {
+			log.Println("Notify error:", err)
+		}
+	})
+	c.Start()
+	defer c.Stop()
+
+	// Menyiapkan route untuk fetch data secara manual
+	mux := http.NewServeMux()
+	mux.HandleFunc("/db-sizes", getDBSizes) // Endpoint untuk mengambil ukuran database
+	mux.HandleFunc("/alerts", getAlerts)    // Endpoint untuk mengambil alert penurunan ukuran
+
+	// Menambahkan CORS untuk frontend
+	handler := cors.New(cors.Options{
+		AllowedOrigins: []string{"http://localhost:3000"},
+	}).Handler(mux)
+
+	log.Println("🚀 Server running on port 8080")
+	log.Fatal(http.ListenAndServe(":8080", handler))
+}
+
+// syncFileDataToDB membaca semua file .sql dan memasukkannya ke dalam tabel db_sizes
+func syncFileDataToDB(folder string) error {
+	// Truncate data yang ada di db_sizes
+	if _, err := db.Exec("TRUNCATE TABLE db_sizes"); err != nil {
 		return err
 	}
 
-	// Traverse folder untuk mencari file .sql
-	err = filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	// Walk melalui folder sql_files dan insert data file ke db_sizes
+	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || filepath.Ext(info.Name()) != ".sql" {
 			return err
 		}
-		// Lewati folder
-		if info.IsDir() {
-			return nil
-		}
-		// Hanya proses file dengan extension .sql
-		if filepath.Ext(info.Name()) != ".sql" {
-			return nil
-		}
-
-		// Ambil tanggal modifikasi dan konversi ukuran ke KB
-		modDate := info.ModTime().Format("2006-01-02")
+		date := info.ModTime().Format("2006-01-02")
 		sizeKB := info.Size() / 1024
-
-		// Masukkan data ke tabel db_sizes
-		_, err = db.Exec("INSERT INTO db_sizes (date, filename, size_kb) VALUES (?, ?, ?)",
-			modDate, info.Name(), sizeKB)
-		if err != nil {
-			return err
-		}
-		return nil
+		_, err = db.Exec(
+			"INSERT INTO db_sizes (date, filename, size_kb) VALUES (?, ?, ?)",
+			date, info.Name(), sizeKB,
+		)
+		return err
 	})
 	return err
 }
 
-// getDBSizes mengambil data dari tabel db_sizes dan mengembalikannya sebagai JSON
-func getDBSizes(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	rows, err := db.Query("SELECT id, date, filename, size_kb FROM db_sizes")
+// checkAndNotify memeriksa penurunan ukuran dan mengirimkan email jika ada
+func checkAndNotify() error {
+	today := time.Now().Format("2006-01-02")
+	rows, err := db.Query(`
+		SELECT c.filename, c.size_kb, MAX(p.size_kb)
+		FROM db_sizes c
+		LEFT JOIN db_sizes p
+			ON c.filename = p.filename
+			AND c.date = p.date
+		WHERE c.date = ?
+		GROUP BY c.filename
+		HAVING c.size_kb < MAX(p.size_kb)
+	`, today)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Query error: %v", err), http.StatusInternalServerError)
+		return err
+	}
+	defer rows.Close()
+
+	var alerts []struct {
+		File      string
+		Prev, Cur int64
+	}
+	for rows.Next() {
+		var f string
+		var prev, cur int64
+		if err := rows.Scan(&f, &cur, &prev); err != nil {
+			return err
+		}
+		alerts = append(alerts, struct {
+			File      string
+			Prev, Cur int64
+		}{f, prev, cur})
+	}
+	if len(alerts) == 0 {
+		log.Println("No size decreases today.")
+		return nil
+	}
+
+	// Menyiapkan body email
+	body := "Subject: [ALERT] Database size decreased\n\n"
+	for _, a := range alerts {
+		body += fmt.Sprintf(
+			"• %s: %d KB → %d KB\n", a.File, a.Prev, a.Cur,
+		)
+	}
+
+	// Kirim email
+	return sendGmail(body)
+}
+
+// sendGmail mengirim email pemberitahuan menggunakan Gmail SMTP
+func sendGmail(body string) error {
+	from := os.Getenv("monitoringdataa@gmail.com")
+	pass := os.Getenv("monitoringdata1.")
+	to := os.Getenv("naufalaryaputra1210@gmail.com")
+	auth := smtp.PlainAuth("", from, pass, "smtp.gmail.com")
+
+	addr := "smtp.gmail.com:587"
+	msg := []byte(body)
+	log.Printf("Sending alert to %s\n", to)
+	return smtp.SendMail(addr, auth, from, []string{to}, msg)
+}
+
+// getDBSizes mengembalikan data ukuran file database sebagai JSON
+func getDBSizes(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query("SELECT id, date, filename, size_kb FROM db_sizes ORDER BY date")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
 		return
 	}
 	defer rows.Close()
 
-	var results []FileData
+	var out []FileData
 	for rows.Next() {
-		var file FileData
-		if err := rows.Scan(&file.ID, &file.Date, &file.Filename, &file.SizeKB); err != nil {
-			http.Error(w, fmt.Sprintf("Scan error: %v", err), http.StatusInternalServerError)
+		var f FileData
+		if err := rows.Scan(&f.ID, &f.Date, &f.Filename, &f.SizeKB); err != nil {
+			http.Error(w, err.Error(), 500)
 			return
 		}
-		results = append(results, file)
+		out = append(out, f)
 	}
-
-	if err = rows.Err(); err != nil {
-		http.Error(w, fmt.Sprintf("Rows error: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(results)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
-func main() {
-	var err error
-
-	// Buka koneksi ke MySQL dengan database monitoring_db
-	// Sesuaikan username, password, dan host sesuai dengan konfigurasi MySQL kamu
-	dsn := "root:@tcp(localhost:3306)/monitoring_db"
-	db, err = sql.Open("mysql", dsn)
+// getAlerts mengembalikan daftar notifikasi alert penurunan ukuran database sebagai JSON
+func getAlerts(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query(`
+		SELECT c.filename, c.size_kb, MAX(p.size_kb)
+		FROM db_sizes c
+		LEFT JOIN db_sizes p
+			ON c.filename = p.filename
+			AND c.date = p.date
+		WHERE c.date = ?
+		GROUP BY c.filename
+		HAVING c.size_kb < MAX(p.size_kb)
+	`, time.Now().Format("2006-01-02"))
 	if err != nil {
-		log.Fatalf("Error opening database: %v", err)
+		http.Error(w, err.Error(), 500)
+		return
 	}
-	defer db.Close()
+	defer rows.Close()
 
-	// Cek koneksi
-	if err = db.Ping(); err != nil {
-		log.Fatalf("Error connecting to database: %v", err)
+	var alerts []struct {
+		Filename string
+		Prev     int64
+		Cur      int64
+	}
+	for rows.Next() {
+		var f string
+		var p, c int64
+		if err := rows.Scan(&f, &p, &c); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		alerts = append(alerts, struct {
+			Filename string
+			Prev     int64
+			Cur      int64
+		}{f, p, c})
 	}
 
-	// Buat tabel db_sizes jika belum ada
-	if err = createTable(); err != nil {
-		log.Fatalf("Error creating table: %v", err)
+	if len(alerts) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]interface{}{})
+		return
 	}
-
-	// Sinkronisasi data dummy dari folder sql_files ke tabel monitoring_db
-	folder := "./sql_files"
-	if err = syncFileDataToDB(folder); err != nil {
-		log.Fatalf("Error syncing file data: %v", err)
-	} else {
-		log.Printf("Successfully synced file data from folder %s", folder)
-	}
-
-	// Daftarkan endpoint untuk mengambil data ukuran file
-	mux := http.NewServeMux()
-	mux.HandleFunc("/db-sizes", getDBSizes)
-
-	// Atur CORS agar frontend (misal, http://localhost:3000) bisa mengakses
-	handler := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000"},
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Content-Type"},
-		AllowCredentials: true,
-	}).Handler(mux)
-
-	fmt.Println("Server running on port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", handler))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(alerts)
 }
