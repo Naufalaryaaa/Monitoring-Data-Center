@@ -57,7 +57,7 @@ func main() {
 
 	// Jadwal cron: sync dan notify setiap hari jam 08:00
 	c := cron.New()
-	c.AddFunc("0 8 * * *", func() {
+	c.AddFunc("0 /5 * * *", func() {
 		log.Println("⏰ Running daily sync + notify")
 		if err := syncFileDataToDB("./sql_files"); err != nil {
 			log.Println("Sync error:", err)
@@ -90,7 +90,7 @@ func main() {
 
 // uploadSQLFile menangani upload .sql dan simpan ke folder sql_files tanpa batasan ukuran
 func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
-	// Ambil file langsung, tanpa limit
+	// Ambil file dari form
 	file, header, err := r.FormFile("sqlfile")
 	if err != nil {
 		http.Error(w, "Gagal membaca file: "+err.Error(), http.StatusBadRequest)
@@ -98,14 +98,14 @@ func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	// Pastikan folder tujuan ada
+	// Pastikan folder sql_files ada
 	dstDir := "./sql_files"
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
 		http.Error(w, "Gagal membuat folder: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Simpan file
+	// Simpan file ke disk
 	dstPath := filepath.Join(dstDir, header.Filename)
 	out, err := os.Create(dstPath)
 	if err != nil {
@@ -118,8 +118,26 @@ func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// --- INSERT KE DATABASE SEGERA ---
+	info, err := out.Stat()
+	if err != nil {
+		log.Printf("Stat error: %v", err)
+	} else {
+		sizeKB := info.Size() / 1024
+		today := time.Now().Format("2006-01-02")
+		// Bisa juga pakai ON DUPLICATE KEY UPDATE jika Anda buat UNIQUE(date,filename)
+		_, err = db.Exec(
+			"INSERT INTO db_sizes (date, filename, size_kb) VALUES (?, ?, ?)",
+			today, header.Filename, sizeKB,
+		)
+		if err != nil {
+			log.Printf("DB insert error: %v", err)
+		}
+	}
+	// --- selesai insert ---
+
 	w.WriteHeader(http.StatusCreated)
-	w.Write([]byte("File berhasil di-upload"))
+	w.Write([]byte("File berhasil di-upload dan dicatat di DB"))
 }
 
 // syncFileDataToDB membaca file .sql dalam folder, lalu simpan ukurannya ke DB
@@ -187,11 +205,23 @@ func checkAndNotify() error {
 
 // sendGmail kirim email via Gmail SMTP
 func sendGmail(body string) error {
-	from := os.Getenv("GMAIL_USER")
-	pass := os.Getenv("GMAIL_PASS")
-	to := os.Getenv("ALERT_RECIPIENT")
+	from := os.Getenv("monitoringdataa@gmail.com")
+	pass := os.Getenv("monitoringdata1.")
+	to := os.Getenv("naufalaryaputra1210@gmail.com")
+
+	// pastikan semuanya tidak kosong
+	if from == "" || pass == "" || to == "" {
+		return fmt.Errorf("missing SMTP env vars (GMAIL_USER, GMAIL_PASS, ALERT_RECIPIENT)")
+	}
+
 	auth := smtp.PlainAuth("", from, pass, "smtp.gmail.com")
-	return smtp.SendMail("smtp.gmail.com:587", auth, from, []string{to}, []byte(body))
+	return smtp.SendMail(
+		"smtp.gmail.com:587",
+		auth,
+		from,
+		[]string{to},
+		[]byte(body),
+	)
 }
 
 // getDBSizes kembalikan semua record ukuran sebagai JSON
