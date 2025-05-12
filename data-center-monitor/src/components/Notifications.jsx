@@ -49,7 +49,7 @@ export default function Notifications() {
 
       {open && (
         <div className="absolute right-0 mt-2 w-64 bg-white shadow-lg rounded-lg z-20">
-          <div className="p-2 border-b font-semibold">Notifications</div>
+          <div className="p-2 border-b font-bold text-black">Notifications</div>
           <ul className="max-h-64 overflow-y-auto">
             {alerts.length > 0 ? (
               alerts.map((a, i) => (
@@ -57,7 +57,7 @@ export default function Notifications() {
                   key={i}
                   className="px-4 py-2 hover:bg-gray-100 border-b last:border-none"
                 >
-                  <div className="font-medium">{a.filename}</div>
+                  <div className="font-semi bold text-black">{a.filename}</div>
                   <div className="text-sm text-gray-600">
                     {a.prev}KB → {a.cur}KB
                   </div>
