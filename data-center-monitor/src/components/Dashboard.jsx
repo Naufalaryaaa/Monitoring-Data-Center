@@ -10,6 +10,8 @@ import {
 } from "recharts";
 import { FaSearch } from "react-icons/fa";
 import { BsCalendar } from "react-icons/bs";
+import { Link } from "react-router-dom";
+import { FaUpload } from "react-icons/fa";
 import pindadLogo from "../assets/pindad.png";
 
 const ChartComponent = ({ data }) => {
@@ -161,19 +163,26 @@ const Dashboard = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 p-6">
-      <div className="flex justify-between items-center bg-blue-800 text-white p-4 rounded-lg shadow-lg mb-6">
-        <div className="flex items-center space-x-3">
-          <img src={pindadLogo} alt="Pindad Logo" className="h-10" />
-          <h1 className="text-3xl font-bold">Monitoring Data Center</h1>
-        </div>
+    {/* Header */}
+    <div className="flex justify-between items-center bg-blue-800 text-white p-4 rounded-lg shadow-lg mb-6">
+      <div className="flex items-center space-x-3">
+        <img src={pindadLogo} alt="Pindad Logo" className="h-10" />
+        <h1 className="text-3xl font-bold">Monitoring Data Center</h1>
+      </div>
+      <div className="flex items-center space-x-4">
+        <Link to="/upload" title="Upload SQL file" className="hover:text-gray-200">
+          <FaUpload className="text-2xl" />
+        </Link>
         <Notifications />
       </div>
-
+    </div>
+      
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {[...Array(4)].map((_, i) => (
           <ChartComponent key={i} data={data} />
         ))}
       </div>
+
     </div>
   );
 };

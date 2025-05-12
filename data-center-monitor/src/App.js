@@ -1,12 +1,19 @@
-import React from 'react';
-import Dashboard from './components/Dashboard';
+// src/App.jsx
+import React from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Dashboard from "./components/Dashboard";
+import UploadPage from "./components/UploadPage";
 
-function App() {
+export default function App() {
   return (
-    <div className="App">
-      <Dashboard />
-    </div>
+    <BrowserRouter>
+      <Routes>
+        {/* Halaman utama dashboard */}
+        <Route path="/" element={<Dashboard />} />
+
+        {/* Halaman untuk upload file .sql */}
+        <Route path="/upload" element={<UploadPage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }
-
-export default App;
