@@ -154,9 +154,9 @@ func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
 
 			// Jika ada prevKB dan penurunan → kirim notifikasi email segera
 			if err == nil && sizeKB < prevKB {
-				body := fmt.Sprintf(
-					"Subject: [ALERT] Database size decreased for %s\n\n%s: %d KB → %d KB\n",
-					header.Filename, header.Filename, prevKB, sizeKB,
+				today := time.Now().Format("2006-01-02") // Ambil tanggal hari ini
+				body := fmt.Sprintf("Subject: [ALERT] Penurunan Size Database dari %s\n\n%s on %s : %d KB → %d KB\n",
+					header.Filename, header.Filename, today, prevKB, sizeKB, // Menambahkan tanggal
 				)
 				go func() {
 					if err := sendGmail(body); err != nil {
