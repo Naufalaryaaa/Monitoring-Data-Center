@@ -57,14 +57,15 @@ func main() {
             filename VARCHAR(255) NOT NULL,
             size_kb BIGINT NOT NULL
         );
-    `)
+
+		`)
 	if err != nil {
 		log.Fatalf("Create table error: %v", err)
 	}
 
 	// Jadwal cron: sync dan notify setiap hari tiap 5 menit
 	c := cron.New()
-	c.AddFunc("0 /5 * * *", func() {
+	c.AddFunc("*/5 * * *", func() {
 		log.Println("⏰ Running daily sync + notify")
 		if err := syncFileDataToDB("./sql_files"); err != nil {
 			log.Println("Sync error:", err)
@@ -195,14 +196,16 @@ func syncFileDataToDB(folder string) error {
 // checkAndNotify mengirim email jika ada penurunan ukuran dari hari sebelumnya
 func checkAndNotify() error {
 	today := time.Now().Format("2006-01-02")
+
+	// Perbaiki query SQL untuk mengambil `date`
 	rows, err := db.Query(`
-        SELECT c.filename, MAX(p.size_kb) AS prev, c.size_kb AS cur
+        SELECT c.filename, c.date, MAX(p.size_kb) AS prev, c.size_kb AS cur
         FROM db_sizes c
         LEFT JOIN db_sizes p
           ON c.filename = p.filename
           AND DATE_SUB(c.date, INTERVAL 1 DAY) = p.date
         WHERE c.date = ?
-        GROUP BY c.filename
+        GROUP BY c.filename, c.date
         HAVING cur < prev
     `, today)
 	if err != nil {
@@ -210,29 +213,41 @@ func checkAndNotify() error {
 	}
 	defer rows.Close()
 
+	// Pastikan ada `Date` dalam struct alert
 	var alerts []struct {
-		File      string
-		Prev, Cur int64
+		File string `json:"filename"`
+		Date string `json:"date"` // Field Date
+		Prev int64  `json:"prev"`
+		Cur  int64  `json:"cur"`
 	}
+
+	// Mengambil data dari query
 	for rows.Next() {
-		var f string
+		var f, date string
 		var prev, cur int64
-		if err := rows.Scan(&f, &prev, &cur); err != nil {
+		if err := rows.Scan(&f, &date, &prev, &cur); err != nil {
 			return err
 		}
 		alerts = append(alerts, struct {
-			File      string
-			Prev, Cur int64
-		}{f, prev, cur})
+			File string `json:"filename"`
+			Date string `json:"date"`
+			Prev int64  `json:"prev"`
+			Cur  int64  `json:"cur"`
+		}{f, date, prev, cur})
 	}
+
+	// Jika tidak ada data alert, kembalikan
 	if len(alerts) == 0 {
 		return nil
 	}
 
-	body := "Subject: [ALERT] Database size decreased\n\n"
+	// Membuat body email dengan penurunan ukuran dan tanggal
+	body := "Subject: [ALERT] Penurunan Size Database\n\n"
 	for _, a := range alerts {
-		body += fmt.Sprintf("• %s: %d KB → %d KB\n", a.File, a.Prev, a.Cur)
+		body += fmt.Sprintf("Pada hari ini\n • %s on %s: %d KB → %d KB\n", a.File, a.Date, a.Prev, a.Cur)
 	}
+
+	// Kirim email
 	return sendGmail(body)
 }
 
@@ -276,13 +291,13 @@ func getDBSizes(w http.ResponseWriter, r *http.Request) {
 func getAlerts(w http.ResponseWriter, r *http.Request) {
 	today := time.Now().Format("2006-01-02")
 	rows, err := db.Query(`
-        SELECT c.filename, MAX(p.size_kb) AS prev, c.size_kb AS cur
+        SELECT c.filename, c.date, MAX(p.size_kb) AS prev, c.size_kb AS cur
         FROM db_sizes c
         LEFT JOIN db_sizes p
           ON c.filename = p.filename
           AND DATE_SUB(c.date, INTERVAL 1 DAY) = p.date
         WHERE c.date = ?
-        GROUP BY c.filename
+        GROUP BY c.filename, c.date
         HAVING cur < prev
     `, today)
 	if err != nil {
@@ -291,25 +306,31 @@ func getAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	// Struktur untuk menyimpan data alerts dengan date
 	var alerts []struct {
 		Filename string `json:"filename"`
+		Date     string `json:"date"` // Menambahkan field Date
 		Prev     int64  `json:"prev"`
 		Cur      int64  `json:"cur"`
 	}
+
+	// Loop untuk mengisi alerts dengan data dari query
 	for rows.Next() {
-		var f string
+		var f, date string
 		var prev, cur int64
-		if err := rows.Scan(&f, &prev, &cur); err != nil {
+		if err := rows.Scan(&f, &date, &prev, &cur); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
 		alerts = append(alerts, struct {
 			Filename string `json:"filename"`
+			Date     string `json:"date"`
 			Prev     int64  `json:"prev"`
 			Cur      int64  `json:"cur"`
-		}{f, prev, cur})
+		}{f, date, prev, cur})
 	}
 
+	// Kirimkan data alerts ke frontend dalam format JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(alerts)
 }

@@ -59,7 +59,7 @@ export default function Notifications() {
                 >
                   <div className="font-semi bold text-black">{a.filename}</div>
                   <div className="text-sm text-gray-600">
-                    {a.prev}KB → {a.cur}KB
+                    {a.prev}KB → {a.cur}KB on {a.date}
                   </div>
                 </li>
               ))
