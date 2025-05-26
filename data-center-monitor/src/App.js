@@ -1,10 +1,11 @@
-// src/App.jsx
+// src/App.js
 import React from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./components/Dashboard";
 import UploadPage from "./components/UploadPage";
+import "./App.css";
 
-export default function App() {
+function App() {
   return (
     <BrowserRouter>
       <Routes>
@@ -17,3 +18,5 @@ export default function App() {
     </BrowserRouter>
   );
 }
+
+export default App;

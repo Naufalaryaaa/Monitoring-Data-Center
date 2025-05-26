@@ -27,12 +27,13 @@ func init() {
 
 var db *sql.DB
 
-// FileData represents struktur data pada tabel db_sizes
+// Tambah field Environment
 type FileData struct {
-	ID       int    `json:"id"`
-	Date     string `json:"date"`
-	Filename string `json:"filename"`
-	SizeKB   int64  `json:"size_kb"`
+	ID          int    `json:"id"`
+	Date        string `json:"date"`
+	Filename    string `json:"filename"`
+	SizeKB      int64  `json:"size_kb"`
+	Environment string `json:"environment"` // Tambahan
 }
 
 func main() {
@@ -49,16 +50,16 @@ func main() {
 		log.Fatalf("DB ping error: %v", err)
 	}
 
-	// Buat tabel jika belum ada
+	// Buat tabel jika belum ada, tambahkan environment
 	_, err = db.Exec(`
         CREATE TABLE IF NOT EXISTS db_sizes (
             id INT AUTO_INCREMENT PRIMARY KEY,
             date DATE NOT NULL,
             filename VARCHAR(255) NOT NULL,
-            size_kb BIGINT NOT NULL
+            size_kb BIGINT NOT NULL,
+            environment VARCHAR(32) DEFAULT NULL
         );
-
-		`)
+	`)
 	if err != nil {
 		log.Fatalf("Create table error: %v", err)
 	}
@@ -106,6 +107,9 @@ func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Ambil environment dari form
+	environment := r.FormValue("environment")
+
 	// Pastikan folder sql_files ada
 	dstDir := "./sql_files"
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
@@ -134,10 +138,10 @@ func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
 		sizeKB := info.Size() / 1024
 		today := time.Now().Format("2006-01-02")
 
-		// Masukkan record baru
+		// Masukkan record baru, tambahkan environment
 		_, err = db.Exec(
-			"INSERT INTO db_sizes (date, filename, size_kb) VALUES (?, ?, ?)",
-			today, header.Filename, sizeKB,
+			"INSERT INTO db_sizes (date, filename, size_kb, environment) VALUES (?, ?, ?, ?)",
+			today, header.Filename, sizeKB, environment,
 		)
 		if err != nil {
 			log.Printf("DB insert error: %v", err)
@@ -154,9 +158,9 @@ func uploadSQLFile(w http.ResponseWriter, r *http.Request) {
 
 			// Jika ada prevKB dan penurunan → kirim notifikasi email segera
 			if err == nil && sizeKB < prevKB {
-				today := time.Now().Format("2006-01-02") // Ambil tanggal hari ini
+				today := time.Now().Format("2006-01-02")
 				body := fmt.Sprintf("Subject: [ALERT] Penurunan Size Database dari %s\n\n%s on %s : %d KB → %d KB\n",
-					header.Filename, header.Filename, today, prevKB, sizeKB, // Menambahkan tanggal
+					header.Filename, header.Filename, today, prevKB, sizeKB,
 				)
 				go func() {
 					if err := sendGmail(body); err != nil {
@@ -186,8 +190,8 @@ func syncFileDataToDB(folder string) error {
 		date := info.ModTime().Format("2006-01-02")
 		sizeKB := info.Size() / 1024
 		_, err = db.Exec(
-			"INSERT INTO db_sizes (date, filename, size_kb) VALUES (?, ?, ?)",
-			date, info.Name(), sizeKB,
+			"INSERT INTO db_sizes (date, filename, size_kb, environment) VALUES (?, ?, ?, ?)",
+			date, info.Name(), sizeKB, "", // environment kosong
 		)
 		return err
 	})
@@ -197,7 +201,6 @@ func syncFileDataToDB(folder string) error {
 func checkAndNotify() error {
 	today := time.Now().Format("2006-01-02")
 
-	// Perbaiki query SQL untuk mengambil `date`
 	rows, err := db.Query(`
         SELECT c.filename, c.date, MAX(p.size_kb) AS prev, c.size_kb AS cur
         FROM db_sizes c
@@ -213,15 +216,13 @@ func checkAndNotify() error {
 	}
 	defer rows.Close()
 
-	// Pastikan ada `Date` dalam struct alert
 	var alerts []struct {
 		File string `json:"filename"`
-		Date string `json:"date"` // Field Date
+		Date string `json:"date"`
 		Prev int64  `json:"prev"`
 		Cur  int64  `json:"cur"`
 	}
 
-	// Mengambil data dari query
 	for rows.Next() {
 		var f, date string
 		var prev, cur int64
@@ -236,22 +237,18 @@ func checkAndNotify() error {
 		}{f, date, prev, cur})
 	}
 
-	// Jika tidak ada data alert, kembalikan
 	if len(alerts) == 0 {
 		return nil
 	}
 
-	// Membuat body email dengan penurunan ukuran dan tanggal
 	body := "Subject: [ALERT] Penurunan Size Database\n\n"
 	for _, a := range alerts {
 		body += fmt.Sprintf("Pada hari ini\n • %s on %s: %d KB → %d KB\n", a.File, a.Date, a.Prev, a.Cur)
 	}
 
-	// Kirim email
 	return sendGmail(body)
 }
 
-// sendGmail kirim email via Gmail SMTP
 func sendGmail(body string) error {
 	from := os.Getenv("GMAIL_USER")
 	pass := os.Getenv("GMAIL_PASS")
@@ -265,9 +262,10 @@ func sendGmail(body string) error {
 	return smtp.SendMail("smtp.gmail.com:587", auth, from, []string{to}, []byte(body))
 }
 
-// getDBSizes kembalikan semua record ukuran sebagai JSON
+// getDBSizes kembalikan semua record ukuran sebagai JSON, sertakan environment
 func getDBSizes(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query("SELECT id, date, filename, size_kb FROM db_sizes ORDER BY date")
+	// GUNAKAN IFNULL pada environment!
+	rows, err := db.Query("SELECT id, date, filename, size_kb, IFNULL(environment, '') FROM db_sizes ORDER BY date")
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -277,7 +275,7 @@ func getDBSizes(w http.ResponseWriter, r *http.Request) {
 	var out []FileData
 	for rows.Next() {
 		var f FileData
-		if err := rows.Scan(&f.ID, &f.Date, &f.Filename, &f.SizeKB); err != nil {
+		if err := rows.Scan(&f.ID, &f.Date, &f.Filename, &f.SizeKB, &f.Environment); err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -306,15 +304,13 @@ func getAlerts(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// Struktur untuk menyimpan data alerts dengan date
 	var alerts []struct {
 		Filename string `json:"filename"`
-		Date     string `json:"date"` // Menambahkan field Date
+		Date     string `json:"date"`
 		Prev     int64  `json:"prev"`
 		Cur      int64  `json:"cur"`
 	}
 
-	// Loop untuk mengisi alerts dengan data dari query
 	for rows.Next() {
 		var f, date string
 		var prev, cur int64
@@ -330,7 +326,6 @@ func getAlerts(w http.ResponseWriter, r *http.Request) {
 		}{f, date, prev, cur})
 	}
 
-	// Kirimkan data alerts ke frontend dalam format JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(alerts)
 }

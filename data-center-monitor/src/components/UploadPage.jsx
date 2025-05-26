@@ -7,6 +7,7 @@ export default function UploadPage() {
   const [file, setFile] = useState(null);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [environment, setEnvironment] = useState(""); // Tambahan
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -18,6 +19,7 @@ export default function UploadPage() {
     setMsg("");
     const formData = new FormData();
     formData.append("sqlfile", file);
+    formData.append("environment", environment); // Tambahan
 
     try {
       const res = await fetch("http://localhost:8080/upload", {
@@ -40,7 +42,6 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-xl shadow-lg overflow-hidden">
-        {/* Header with Back Link */}
         <div className="bg-blue-600 text-white px-6 py-4 flex items-center">
           <Link to="/" className="flex items-center hover:opacity-90">
             <FaArrowLeft className="mr-2 text-lg" />
@@ -48,14 +49,12 @@ export default function UploadPage() {
           </Link>
         </div>
 
-        {/* Content */}
         <div className="p-6">
           <h2 className="text-2xl font-semibold mb-4 text-gray-800">
             Upload File Database <span className="text-blue-600">.sql</span>
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Custom File Input */}
             <label className="block">
               <span className="sr-only">Choose your .sql file</span>
               <input
@@ -70,7 +69,22 @@ export default function UploadPage() {
               />
             </label>
 
-            {/* Upload Button */}
+            {/* Environment */}
+            <label className="block mb-2">
+              <span className="text-gray-700">Environment Database</span>
+              <select
+                className="block w-full mt-1 p-2 border rounded"
+                value={environment}
+                onChange={e => setEnvironment(e.target.value)}
+                required
+              >
+                <option value="">Pilih Environment</option>
+                <option value="Production">Production</option>
+                <option value="Staging">Staging</option>
+                <option value="Obsolete">Obsolete</option>
+              </select>
+            </label>
+
             <button
               type="submit"
               disabled={loading}
@@ -83,7 +97,6 @@ export default function UploadPage() {
             </button>
           </form>
 
-          {/* Message */}
           {msg && (
             <p
               className={`mt-4 text-center text-sm ${
